@@ -35,16 +35,19 @@ func TestSuiteRun(t *testing.T) {
 
 func (s *TestSuite) SetupSuite() {
 	base.SetupSuite()
+
 	base.Precondition("Проверяем, что константы заданы")
 	require.NotEmpty(s.T(), existingAdTitle, "задайте existingAdTitle")
 	require.NotEmpty(s.T(), searchBeginning, "задайте searchBeginning")
 	require.NotEmpty(s.T(), searchMiddle, "задайте searchMiddle")
 	require.NotEmpty(s.T(), searchEnd, "задайте searchEnd")
+
 	s.loginData = auth.Login(s.T(), os.Getenv("TEST_LOGIN"), os.Getenv("TEST_PASSWORD"))
 }
 
 func (s *TestSuite) TestSearchByTitle() {
 	list := advList.GetAdvertisementsList(s.T(), s.loginData.Token, searchMiddle)
+
 	s.Run("В ответе есть хотя бы одно объявление", func() {
 		require.NotEmpty(s.T(), list.Items)
 	})
@@ -65,6 +68,7 @@ func (s *TestSuite) TestSearchByTitle_Substring() {
 		{"верхний регистр", strings.ToUpper(searchMiddle)},
 		{"смешанный регистр", utils.MixCase(searchMiddle)},
 	}
+
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			list := advList.GetAdvertisementsList(s.T(), s.loginData.Token, tc.search)

@@ -1,24 +1,18 @@
 package myAdvertisements
 
 import (
-	"io"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"api-tests-template/internal/client/http/myAdvertisements"
+	"api-tests-template/internal/helpers/response"
 )
 
 // GetMyAdvertisements возвращает список объявлений авторизованного пользователя и проверяет ожидаемый статус-код
 func GetMyAdvertisements(t *testing.T, token string, expectedStatusCode int, limit int) string {
-	myAdvertisementsRawResponse := myAdvertisements.HttpGetMyAdvertisements(t, token, limit)
-	defer myAdvertisementsRawResponse.Body.Close()
+	t.Helper()
 
-	require.Equalf(t, expectedStatusCode, myAdvertisementsRawResponse.StatusCode,
-		"HTTP status code должен быть %d", expectedStatusCode)
+	body := response.Read(t, myAdvertisements.HttpGetMyAdvertisements(t, token, limit))
+	body.AssertStatus(t, expectedStatusCode)
 
-	myAdvertisementsResponse, errResponse := io.ReadAll(myAdvertisementsRawResponse.Body)
-	require.NoError(t, errResponse)
-
-	return string(myAdvertisementsResponse)
+	return body.Content
 }

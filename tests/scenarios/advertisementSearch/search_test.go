@@ -42,7 +42,7 @@ func (s *TestSuite) SetupSuite() {
 	require.NotEmpty(s.T(), searchMiddle, "задайте searchMiddle")
 	require.NotEmpty(s.T(), searchEnd, "задайте searchEnd")
 
-	s.loginData = auth.Login(s.T(), os.Getenv("TEST_LOGIN"), os.Getenv("TEST_PASSWORD"))
+	s.loginData = auth.Login(s.T(), os.Getenv("TEST_USER_LOGIN"), os.Getenv("TEST_USER_PASSWORD"))
 }
 
 func (s *TestSuite) TestSearchByTitle() {

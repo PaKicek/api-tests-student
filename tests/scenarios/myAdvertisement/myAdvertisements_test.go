@@ -29,7 +29,7 @@ func (s *TestSuite) SetupSuite() {
 	base.SetupSuite()
 
 	base.Precondition("Авторизация пользователя с кредами из переменных окружения и получение его параметров")
-	s.loginData = auth.Login(s.T(), os.Getenv("TEST_LOGIN"), os.Getenv("TEST_PASSWORD"))
+	s.loginData = auth.Login(s.T(), os.Getenv("TEST_USER_LOGIN"), os.Getenv("TEST_USER_PASSWORD"))
 }
 
 func (s *TestSuite) TearDownSuite() {

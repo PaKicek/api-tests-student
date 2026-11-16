@@ -315,7 +315,7 @@ func (s *TestSuite) TestFavoritesLimitReached() {
 	base.Precondition("Очищаем избранное тестового пользователя, чтобы тест начинался с пустого списка")
 	s.clearFavorites(t)
 
-	base.Precondition(fmt.Sprintf("Создаём %d объявления продавца: %d добавляем в избранное, на последнем проверяем лимит",
+	base.Precondition(fmt.Sprintf("Создаём %d объявление продавца: %d добавляем в избранное, на последнем проверяем лимит",
 		favoritesLimit+1, favoritesLimit))
 
 	favoriteAdvertisements := make([]advModels.Advertisement, 0, favoritesLimit+1)

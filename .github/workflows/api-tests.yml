@@ -1,0 +1,60 @@
+name: API tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set up repository
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Set up golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.5.0
+          args: --timeout=5m
+
+  tests:
+    name: API tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Set up repository
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Download dependencies
+        run: go mod download
+      - name: Run tests
+        env:
+          API_URL: https://testboard.avito.com/api/v1
+          DEBUG: false
+          TEST_USER_LOGIN: ${{ secrets.TEST_USER_LOGIN }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+          TEST_SELLER_LOGIN: ${{ secrets.TEST_SELLER_LOGIN }}
+          TEST_SELLER_PASSWORD: ${{ secrets.TEST_SELLER_PASSWORD }}
+        run: go test -v -count=1 -p 1 -timeout 20m ./...

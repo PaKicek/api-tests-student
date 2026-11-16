@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -30,6 +31,10 @@ const (
 	advertisementPrice = 50000
 	// advertisementQuantity количество товара в объявлениях, которые создаются для подготовки тестов
 	advertisementQuantity = 8
+	// favoritesLimit максимальное количество записей избранного на пользователя
+	favoritesLimit = 50
+	// rateLimitDelay пауза перед запросами, которые создают, добавляют и удаляют данные (сервер ограничивает частоту таких запросов и выдаёт ошибку 503)
+	rateLimitDelay = time.Second
 )
 
 type TestSuite struct {
@@ -52,6 +57,11 @@ func (s *TestSuite) SetupSuite() {
 	s.sellerLogin = base.LoginTestSeller(s.T())
 }
 
+// waitForRateLimit выдерживает паузу перед запросом, чтобы не превысить ограничение частоты запросов на сервере
+func waitForRateLimit() {
+	time.Sleep(rateLimitDelay)
+}
+
 // Positive: полный цикл работы с избранным - добавление объявления, проверка в списке, удаление из избранного и проверка, что объявление пропало из списка
 func (s *TestSuite) TestFavoritesFullCycle() {
 	t := s.T()
@@ -61,7 +71,7 @@ func (s *TestSuite) TestFavoritesFullCycle() {
 
 	t.Cleanup(func() {
 		base.Step(fmt.Sprintf("Убираем объявление %s из избранного после теста", advertisement.Id))
-		favoritesManager.RemoveFavoriteIfExists(t, s.login.Token, advertisement.Id)
+		s.removeFavoriteIfExists(t, s.login.Token, advertisement.Id)
 	})
 
 	var favorite favoritesModels.FavoriteItem
@@ -69,7 +79,7 @@ func (s *TestSuite) TestFavoritesFullCycle() {
 	s.Run("Добавляем объявление в избранное", func() {
 		base.Step(fmt.Sprintf("POST /favorites: advertisement_id=%s", advertisement.Id))
 
-		favorite = favoritesManager.AddFavorite(s.T(), s.login.Token, advertisement.Id)
+		favorite = s.addFavorite(s.T(), s.login.Token, advertisement.Id)
 
 		base.Check("Запись избранного создана и содержит объявление продавца")
 		require.NotEmpty(s.T(), favorite.FavoriteId, "В ответе нет идентификатора записи избранного")
@@ -91,7 +101,7 @@ func (s *TestSuite) TestFavoritesFullCycle() {
 	s.Run("Удаляем объявление из избранного", func() {
 		base.Step(fmt.Sprintf("DELETE /favorites/%s", advertisement.Id))
 
-		favoritesManager.DeleteFavorite(s.T(), s.login.Token, advertisement.Id)
+		s.deleteFavorite(s.T(), s.login.Token, advertisement.Id)
 
 		base.Check("Сервер подтвердил удаление объявления из избранного")
 	})
@@ -115,13 +125,13 @@ func (s *TestSuite) TestFavoriteDeletedWithAdvertisement() {
 
 	t.Cleanup(func() {
 		base.Step(fmt.Sprintf("Убираем объявление %s из избранного после теста", advertisement.Id))
-		favoritesManager.RemoveFavoriteIfExists(t, s.login.Token, advertisement.Id)
+		s.removeFavoriteIfExists(t, s.login.Token, advertisement.Id)
 	})
 
 	s.Run("Добавляем объявление в избранное", func() {
 		base.Step(fmt.Sprintf("POST /favorites: advertisement_id=%s", advertisement.Id))
 
-		favoritesManager.AddFavorite(s.T(), s.login.Token, advertisement.Id)
+		s.addFavorite(s.T(), s.login.Token, advertisement.Id)
 
 		base.Check("Объявление добавлено в избранное")
 	})
@@ -172,10 +182,10 @@ func (s *TestSuite) TestFavoritesNegative() {
 	base.Precondition("Создаём объявление продавца и добавляем его в избранное - на нём проверяем повторное добавление")
 	sellerAdvertisement := s.createAdvertisement(t, s.sellerLogin, base.UniqueAdvertisementTitle("Тумба на ножках серая"))
 
-	favoritesManager.AddFavorite(t, s.login.Token, sellerAdvertisement.Id)
+	s.addFavorite(t, s.login.Token, sellerAdvertisement.Id)
 	t.Cleanup(func() {
 		base.Step(fmt.Sprintf("Убираем объявление %s из избранного после теста", sellerAdvertisement.Id))
-		favoritesManager.RemoveFavoriteIfExists(t, s.login.Token, sellerAdvertisement.Id)
+		s.removeFavoriteIfExists(t, s.login.Token, sellerAdvertisement.Id)
 	})
 
 	// идентификатор, которого гарантированно нет на сервере
@@ -290,11 +300,73 @@ func (s *TestSuite) TestFavoritesNegative() {
 	}
 }
 
+// Negative: пользователь не может добавить в избранное больше 50 объявлений - на 51 объявлении сервер возвращает ошибку лимита.
+// Тест долгий, так как для достижения лимита нужно создать 50 объявлений и 50 записей избранного
+func (s *TestSuite) TestFavoritesLimitReached() {
+	t := s.T()
+
+	if testing.Short() {
+		s.T().Skip("в режиме -short тест пропускается: он создаёт 50 объявлений и 50 записей избранного")
+	}
+
+	base.Precondition(fmt.Sprintf("Между запросами на создание объявления, добавление в избранное и удаление "+
+		"выдерживаем паузу %s, чтобы не превысить ограничение частоты запросов на сервере", rateLimitDelay))
+
+	base.Precondition("Очищаем избранное тестового пользователя, чтобы тест начинался с пустого списка")
+	s.clearFavorites(t)
+
+	base.Precondition(fmt.Sprintf("Создаём %d объявления продавца: %d добавляем в избранное, на последнем проверяем лимит",
+		favoritesLimit+1, favoritesLimit))
+
+	favoriteAdvertisements := make([]advModels.Advertisement, 0, favoritesLimit+1)
+	for i := 1; i <= favoritesLimit+1; i++ {
+		title := base.UniqueAdvertisementTitle(fmt.Sprintf("Кресло офисное %d", i))
+		favoriteAdvertisements = append(favoriteAdvertisements, s.createAdvertisement(t, s.sellerLogin, title))
+	}
+
+	base.Step(fmt.Sprintf("POST /favorites для %d объявлений продавца", favoritesLimit))
+	for _, advertisement := range favoriteAdvertisements[:favoritesLimit] {
+		s.addFavorite(t, s.login.Token, advertisement.Id)
+	}
+
+	base.Check(fmt.Sprintf("В избранном ровно %d записей - лимит достигнут", favoritesLimit))
+	favoritesList := favoritesManager.GetFavorites(t, s.login.Token, "")
+	require.Equal(t, favoritesLimit, favoritesList.Total, "Количество записей в избранном не совпадает с лимитом")
+
+	advertisementAboveLimit := favoriteAdvertisements[favoritesLimit]
+
+	s.Run("Добавление объявления сверх лимита возвращает ошибку", func() {
+		base.Step(fmt.Sprintf("POST /favorites: advertisement_id=%s сверх лимита", advertisementAboveLimit.Id))
+
+		wantError := response.ExpectedError{
+			StatusCode: http.StatusBadRequest,
+			Code:       messages.CodeLimitReached,
+			Message:    messages.FavoritesLimitReached,
+		}
+
+		raw := favoritesManager.AddFavoriteRaw(s.T(), s.login.Token, advertisementAboveLimit.Id)
+		wantError.Assert(s.T(), raw)
+
+		base.Check(fmt.Sprintf("API вернул %d: %s", wantError.StatusCode, wantError.Message))
+	})
+
+	s.Run("Объявление сверх лимита не попало в избранное", func() {
+		base.Step("GET /favorites")
+
+		favoritesList := favoritesManager.GetFavorites(s.T(), s.login.Token, "")
+
+		base.Check(fmt.Sprintf("В избранном по-прежнему %d записей", favoritesLimit))
+		require.Equal(s.T(), favoritesLimit, favoritesList.Total, "Количество записей в избранном изменилось после отказа")
+		assertions.NotContainsFavoriteAdvertisement(s.T(), favoritesList.Items, advertisementAboveLimit.Id)
+	})
+}
+
 // createAdvertisement создаёт объявление от имени переданного пользователя и удаляет его после теста, чтобы прогоны оставались идемпотентными
 func (s *TestSuite) createAdvertisement(t *testing.T, login authModels.LoginOkResponse, title string) advModels.Advertisement {
 	t.Helper()
 
 	base.Step(fmt.Sprintf("POST /advertisement: создаём объявление %q от имени %s", title, login.User.Email))
+	waitForRateLimit()
 
 	created := advertisements.CreateAdvertisement(t, login.Token, advModels.CreateAdvertisementRequest{
 		Title:       title,
@@ -306,8 +378,46 @@ func (s *TestSuite) createAdvertisement(t *testing.T, login authModels.LoginOkRe
 
 	t.Cleanup(func() {
 		base.Step(fmt.Sprintf("Удаляем объявление %s, созданное для теста", created.Id))
+		waitForRateLimit()
 		advertisements.DeleteAdvertisementIfExists(t, login.Token, created.Id)
 	})
 
 	return created
+}
+
+// addFavorite добавляет объявление в избранное с паузой перед запросом
+func (s *TestSuite) addFavorite(t *testing.T, token, advertisementId string) favoritesModels.FavoriteItem {
+	t.Helper()
+
+	waitForRateLimit()
+
+	return favoritesManager.AddFavorite(t, token, advertisementId)
+}
+
+// deleteFavorite удаляет объявление из избранного с паузой перед запросом
+func (s *TestSuite) deleteFavorite(t *testing.T, token, advertisementId string) {
+	t.Helper()
+
+	waitForRateLimit()
+	favoritesManager.DeleteFavorite(t, token, advertisementId)
+}
+
+// removeFavoriteIfExists удаляет объявление из избранного с паузой перед запросом, используется при очистке данных после теста
+func (s *TestSuite) removeFavoriteIfExists(t *testing.T, token, advertisementId string) {
+	t.Helper()
+
+	waitForRateLimit()
+	favoritesManager.RemoveFavoriteIfExists(t, token, advertisementId)
+}
+
+// clearFavorites удаляет все записи избранного у тестового пользователя, чтобы прогоны оставались идемпотентными (т.е. тест на лимит начинался с пустого списка)
+func (s *TestSuite) clearFavorites(t *testing.T) {
+	t.Helper()
+
+	favoritesList := favoritesManager.GetFavorites(t, s.login.Token, "")
+	for _, item := range favoritesList.Items {
+		favoritesManager.DeleteFavorite(t, s.login.Token, item.Advertisement.Id)
+	}
+
+	base.Check(fmt.Sprintf("Избранное тестового пользователя пустое, удалено записей: %d", len(favoritesList.Items)))
 }

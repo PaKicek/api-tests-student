@@ -7,6 +7,7 @@ const (
 	CodeNotFound       = "not_found"
 	CodeForbidden      = "forbidden"
 	CodeAlreadyExists  = "already_exists"
+	CodeLimitReached   = "limit_reached"
 )
 
 // Сообщения об ошибках авторизации
@@ -34,4 +35,5 @@ const (
 	CannotAddOwnAdvertisement       = "Cannot add own advertisement to favorites"
 	AdvertisementAlreadyInFavorites = "Advertisement is already in favorites"
 	FavoriteNotFound                = "Favorite entry not found"
+	FavoritesLimitReached           = "Favorites limit of 50 reached"
 )
